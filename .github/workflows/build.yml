@@ -80,7 +80,7 @@ jobs:
         run: pip install ${{ needs.build.outputs.WHL }}
 
       - name: Install test dependencies
-        run: pip install pytest pytest-html"  # to execute lz4 tests install it
+        run: pip install pytest pytest-html  # to execute lz4 tests install it
 
       - name: Run pytest
         run: pytest --html=pytest_reports/unittest_report_${{ matrix.os }}_py${{ matrix.python-version }}.html --self-contained-html tests
