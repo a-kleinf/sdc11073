@@ -77,7 +77,7 @@ jobs:
           path: dist
 
       - name: Install package
-        run: pip install ${{ needs.build.outputs.WHL }}
+        run: pip install ${{ needs.build.outputs.WHL }}[lz4]
 
       - name: Install test dependencies
         run: pip install pytest pytest-html  # to execute lz4 tests install it
