@@ -23,7 +23,7 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           name: distributions
-          path: dist/
+          path: dist
 
       - name: Publish package to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
