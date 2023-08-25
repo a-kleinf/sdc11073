@@ -104,6 +104,18 @@ jobs:
           path: pytest_reports/unittest_report_${{ matrix.os }}_py${{ matrix.python-version }}_${{ env.SUFFIX }}.html
           retention-days: 5
 
+      - name: Download unittest reports
+        uses: actions/download-artifact@v3
+        with:
+          name: unittest_reports
+          path: pytest_reports/
+
+      - name: Zip unittest reports
+        uses: vimtor/action-zip@v1.1
+        with:
+          files: pytest_reports/
+          dest: pytest_reports/test_reports.zip
+
       - name: Archive test log
         uses: actions/upload-artifact@v3
         if: success() || failure()  # upload artifacts also if test stage failed
