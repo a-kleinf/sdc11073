@@ -96,6 +96,20 @@ jobs:
           --cov=$(python -c "import pathlib;import sdc11073;print(pathlib.Path(sdc11073.__file__).parent)")
           --log-file pytest_${{ matrix.os }}_py${{ matrix.python-version }}_${{ env.SUFFIX }}.log
 
+      - name: Zip unittest reports
+        uses: vimtor/action-zip@v1.1
+        with:
+          files: pytest_reports/
+          dest: pytest_reports/test_reports.zip
+
+      - name: Archive test result
+        uses: actions/upload-artifact@v3
+        if: success() || failure()  # upload artifacts also if test stage failed
+        with:
+          name: unittest_reports_zip
+          path: pytest_reports/test_reports.zip
+          retention-days: 5
+
       - name: Archive test result
         uses: actions/upload-artifact@v3
         if: success() || failure()  # upload artifacts also if test stage failed
@@ -103,18 +117,6 @@ jobs:
           name: unittest_reports
           path: pytest_reports/unittest_report_${{ matrix.os }}_py${{ matrix.python-version }}_${{ env.SUFFIX }}.html
           retention-days: 5
-
-      - name: Download unittest reports
-        uses: actions/download-artifact@v3
-        with:
-          name: unittest_reports
-          path: pytest_reports/
-
-      - name: Zip unittest reports
-        uses: vimtor/action-zip@v1.1
-        with:
-          files: pytest_reports/
-          dest: pytest_reports/test_reports.zip
 
       - name: Archive test log
         uses: actions/upload-artifact@v3
