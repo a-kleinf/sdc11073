@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import pathlib
 from enum import Enum
-from typing import Optional, Type, NamedTuple
+from typing import NamedTuple
+from typing import Optional
+from typing import Type
 
 from lxml import etree as etree_
 
@@ -53,8 +55,8 @@ class PrefixesEnum(PrefixNamespace, Enum):
                           schema_folder.joinpath('eventing.xsd'))
     XSD = PrefixNamespace('xsd',
                           'http://www.w3.org/2001/XMLSchema',
-                          'http://www.w3.org/2001/xml.xsd',
-                          schema_folder.joinpath('xml.xsd'))
+                          None,
+                          None)
     XSI = PrefixNamespace('xsi',
                           'http://www.w3.org/2001/XMLSchema-instance',
                           None,
@@ -81,8 +83,8 @@ class PrefixesEnum(PrefixNamespace, Enum):
                           schema_folder.joinpath('soap-envelope.xsd'))
     XML = PrefixNamespace('xml',
                           'http://www.w3.org/XML/1998/namespace',
-                          None,
-                          None)
+                          'http://www.w3.org/2001/xml.xsd',
+                          schema_folder.joinpath('xml.xsd'))
     WXF = PrefixNamespace('wxf',  # ws-transfer
                           'http://schemas.xmlsoap.org/ws/2004/09/transfer',
                           None,
