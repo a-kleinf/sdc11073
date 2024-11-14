@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from lxml import etree as etree_
 
+from sdc11073 import xml_utils
 from sdc11073.exceptions import ApiUsageError
 from sdc11073.namespaces import QN_TYPE, docname_from_qname, text_to_qname
 
@@ -32,14 +33,15 @@ from .dataconverters import (
     StringConverter,
     TimestampConverter,
 )
-from sdc11073 import xml_utils
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
     from decimal import Decimal
+
+    from sdc11073.mdib.containerbase import ContainerBase
     from sdc11073.namespaces import NamespaceHelper
     from sdc11073.xml_types.basetypes import XMLTypeBase
-    from sdc11073.mdib.containerbase import ContainerBase
+
     from .dataconverters import DataConverterProtocol
     from .isoduration import DurationType
 
@@ -75,7 +77,7 @@ class _XmlStructureBaseProperty(ABC):
     update_xml_value: convert the Python data type to XML type and write it to XML node.
     """
 
-    def __init__(self, local_var_name: str,  # noqa: PLR0913
+    def __init__(self, local_var_name: str,
                  value_converter: DataConverterProtocol,
                  default_py_value: Any | None = None,
                  implied_py_value: Any | None = None,
@@ -197,7 +199,7 @@ class _AttributeBase(_XmlStructureBaseProperty):
     The python representation is determined by value_converter.
     """
 
-    def __init__(self, attribute_name: str,  # noqa: PLR0913
+    def __init__(self, attribute_name: str,
                  value_converter: DataConverterProtocol | None = None,
                  default_py_value: Any = None,
                  implied_py_value: Any = None,
@@ -248,7 +250,7 @@ class _AttributeBase(_XmlStructureBaseProperty):
 class _ElementBase(_XmlStructureBaseProperty, ABC):
     """_ElementBase represents an XML Element."""
 
-    def __init__(self, sub_element_name: etree_.QName | None,  # noqa: PLR0913
+    def __init__(self, sub_element_name: etree_.QName | None,
                  value_converter: DataConverterProtocol,
                  default_py_value: Any = None,
                  implied_py_value: Any = None,
@@ -337,7 +339,7 @@ class TimeZoneAttributeProperty(StringAttributeProperty):
 class EnumAttributeProperty(_AttributeBase):
     """Base class for enum attributes."""
 
-    def __init__(self, attribute_name: str,  # noqa: PLR0913
+    def __init__(self, attribute_name: str,
                  enum_cls: Any,
                  default_py_value: Any = None,
                  implied_py_value: Any = None,
@@ -656,7 +658,7 @@ class NodeStringProperty(NodeTextProperty):
     if the xml element that should contain the text does not exist, the python value is None.
     """
 
-    def __init__(self, sub_element_name: etree_.QName | None = None,  # noqa: PLR0913
+    def __init__(self, sub_element_name: etree_.QName | None = None,
                  default_py_value: str | None = None,
                  implied_py_value: str | None = None,
                  is_optional: bool = False,
@@ -679,7 +681,7 @@ class NodeEnumTextProperty(NodeTextProperty):
     Python representation is an enum.
     """
 
-    def __init__(self, sub_element_name: etree_.QName | None,  # noqa: PLR0913
+    def __init__(self, sub_element_name: etree_.QName | None,
                  enum_cls: Any,
                  default_py_value: Any | None = None,
                  implied_py_value: Any | None = None,
@@ -695,7 +697,7 @@ class NodeEnumQNameProperty(NodeTextProperty):
     Python representation is an Enum of QName, XML is prefix:localname.
     """
 
-    def __init__(self, sub_element_name: etree_.QName | None,  # noqa: PLR0913
+    def __init__(self, sub_element_name: etree_.QName | None,
                  enum_cls: Any,
                  default_py_value: Any | None = None,
                  implied_py_value: Any | None = None,
@@ -748,7 +750,7 @@ class NodeEnumQNameProperty(NodeTextProperty):
 class NodeIntProperty(NodeTextProperty):
     """Python representation is an int."""
 
-    def __init__(self, sub_element_name: etree_.QName | None = None,  # noqa: PLR0913
+    def __init__(self, sub_element_name: etree_.QName | None = None,
                  default_py_value: int | None = None,
                  implied_py_value: int | None = None,
                  is_optional: bool = False,
@@ -759,7 +761,7 @@ class NodeIntProperty(NodeTextProperty):
 class NodeDecimalProperty(NodeTextProperty):
     """Python representation is an int."""
 
-    def __init__(self, sub_element_name: etree_.QName | None = None,  # noqa: PLR0913
+    def __init__(self, sub_element_name: etree_.QName | None = None,
                  default_py_value: Decimal | None = None,
                  implied_py_value: Decimal | None = None,
                  is_optional: bool = False,
@@ -770,7 +772,7 @@ class NodeDecimalProperty(NodeTextProperty):
 class NodeDurationProperty(NodeTextProperty):
     """Python representation is an int."""
 
-    def __init__(self, sub_element_name: etree_.QName | None = None,  # noqa: PLR0913
+    def __init__(self, sub_element_name: etree_.QName | None = None,
                  default_py_value: isoduration.DurationType | None = None,
                  implied_py_value: isoduration.DurationType | None = None,
                  is_optional: bool = False,
@@ -955,7 +957,7 @@ class AnyEtreeNodeProperty(_ElementBase):
 class SubElementProperty(_ElementBase):
     """Uses a value that has an "as_etree_node" method."""
 
-    def __init__(self, sub_element_name: etree_.QName | None,  # noqa: PLR0913
+    def __init__(self, sub_element_name: etree_.QName | None,
                  value_class: type[XMLTypeBase],
                  default_py_value: Any | None = None,
                  implied_py_value: Any | None = None,
@@ -998,7 +1000,7 @@ class SubElementProperty(_ElementBase):
 class ContainerProperty(_ElementBase):
     """ContainerProperty supports xsi:type information from xml and instantiates value accordingly."""
 
-    def __init__(self, sub_element_name: etree_.QName | None,  # noqa: PLR0913
+    def __init__(self, sub_element_name: etree_.QName | None,
                  value_class: type[ContainerBase],
                  cls_getter: Callable[[etree_.QName], type],
                  ns_helper: NamespaceHelper,
@@ -1115,7 +1117,7 @@ class SubElementListProperty(_ElementListProperty):
             py_value = getattr(instance, self._local_var_name)
         except AttributeError:  # set to None (it is in the responsibility of the called method to do the right thing)
             py_value = self._default_py_value
-
+        a = 1
         if py_value is not None:
             for val in py_value:
                 sub_node = val.as_etree_node(self._sub_element_name, node.nsmap, node)
@@ -1134,7 +1136,7 @@ class ContainerListProperty(_ElementListProperty):
     Used if maxOccurs="Unbounded" in BICEPS_ParticipantModel.
     """
 
-    def __init__(self, sub_element_name: etree_.QName | None,  # noqa: PLR0913
+    def __init__(self, sub_element_name: etree_.QName | None,
                  value_class: type[ContainerBase],
                  cls_getter: Callable[[etree_.QName], type],
                  ns_helper: NamespaceHelper,
