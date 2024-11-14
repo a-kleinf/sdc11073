@@ -39,6 +39,7 @@ def dec_list(*args):
 
 def _findServer(netloc):
     dev_addr = netloc.split(':')
+    a=1
     dev_addr = tuple([dev_addr[0], int(dev_addr[1])])  # make port number an integer
     for key, srv in _mockhttpservers.items():
         if tuple(key) == dev_addr:
