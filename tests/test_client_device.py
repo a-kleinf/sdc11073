@@ -55,7 +55,6 @@ from sdc11073.xml_types import msg_types, pm_types
 from sdc11073.xml_types import pm_qnames as pm
 from sdc11073.xml_types.actions import periodic_actions
 from sdc11073.xml_types.addressing_types import HeaderInformationBlock
-from sdc11073.xml_types.isoduration import UTC
 from tests import utils
 from tests.mockstuff import SomeDevice, dec_list
 
@@ -143,7 +142,6 @@ def runtest_realtime_samples(unit_test: unittest.TestCase, sdc_device: SomeDevic
     # But wait long enough to have at least one full waveform period in buffer for annotations.
     client_mdib = ConsumerMdib(sdc_client, max_realtime_samples=297)
     client_mdib.init_mdib()
-    client_mdib.xtra.set_calculate_wf_age_stats(True)
     time.sleep(3.5)  # Wait long enough to make the rt_buffers full.
     d_handles = ('0x34F05500', '0x34F05501', '0x34F05506')
 
@@ -207,12 +205,7 @@ def runtest_realtime_samples(unit_test: unittest.TestCase, sdc_device: SomeDevic
     dt = values[-1].determination_time - values[1].determination_time
     unit_test.assertAlmostEqual(0.01 * len(values), dt, delta=0.5)
 
-    # following test is disabled since it is testing network performance but not functionality
-    # age_data = client_mdib.xtra.get_wf_age_stdev()  # noqa: ERA001
-    # unit_test.assertLess(abs(age_data.mean_age), 1)  # noqa: ERA001
-    # unit_test.assertLess(abs(age_data.stdev), 0.5)  # noqa: ERA001
-    # unit_test.assertLess(abs(age_data.min_age), 1)  # noqa: ERA001
-    # unit_test.assertGreater(abs(age_data.max_age), 0.0)  # noqa: ERA001
+
 
 
 def runtest_metric_reports(unit_test: unittest.TestCase,
