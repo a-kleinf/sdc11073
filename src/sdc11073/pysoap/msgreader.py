@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import time
 import traceback
 from collections import namedtuple
 from dataclasses import dataclass
@@ -33,6 +34,14 @@ def validate_node(node: xml_utils.LxmlElement, xml_schema: etree.XMLSchema, logg
     try:
         xml_schema.assertValid(node)
     except etree.DocumentInvalid as ex:
+        if "No matching global declaration available for the validation root." in str(ex):
+            time.sleep(1)
+            try:
+                xml_schema.assertValid(node)
+                return
+            except etree.DocumentInvalid:
+                pass
+
         logger.warning(traceback.format_exc())
         logger.warning(etree.tostring(node, pretty_print=True).decode('utf-8'))
         fault = Fault()

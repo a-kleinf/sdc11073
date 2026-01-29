@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from .namespaces import NamespaceHelper, PrefixNamespace
 
 
-def mk_schema_validator(namespaces: list[PrefixNamespace], ns_helper: NamespaceHelper) -> etree.XMLSchema:
+def mk_schema_validator(namespaces: list[PrefixNamespace], ns_helper: NamespaceHelper, time_to_wait=1) -> etree.XMLSchema:
     """Create a schema validator."""
     schema_resolver = SchemaResolver(namespaces)
     parser = etree.XMLParser(resolve_entities=True)
@@ -36,14 +36,16 @@ def mk_schema_validator(namespaces: list[PrefixNamespace], ns_helper: NamespaceH
     elem_tree = etree.fromstring(all_included, parser=parser)
     # for unknown reason creating the schema fails sometimes. repeat up to 3 times.
     try:
-        return etree.XMLSchema(etree=elem_tree)
+        schema = etree.XMLSchema(etree=elem_tree)
     except etree.XMLSchemaParseError:
         time.sleep(0.1)
-    try:
-        return etree.XMLSchema(etree=elem_tree)
-    except etree.XMLSchemaParseError:
-        time.sleep(0.5)
-    return etree.XMLSchema(etree=elem_tree)
+        try:
+            schema = etree.XMLSchema(etree=elem_tree)
+        except etree.XMLSchemaParseError:
+            time.sleep(0.5)
+            schema = etree.XMLSchema(etree=elem_tree)
+    time.sleep(time_to_wait)
+    return schema
 
 
 class SchemaResolver(etree.Resolver):
