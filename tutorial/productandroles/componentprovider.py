@@ -83,13 +83,13 @@ class GenericSetComponentStateOperationProvider(RoleProvider):
                         '_set_component_state operation: ignore invalid referenced type %s in operation',
                         entity.node_type.localname,
                     )
-        return ExecuteResult(
-            params.operation_instance.operation_target_handle,
-            self._mdib.data_model.msg_types.InvocationState.FINISHED,
-        )
+            return ExecuteResult(
+                invocation_state=self._mdib.data_model.msg_types.InvocationState.FINISHED,
+                mdib_version_group=self._mdib.mdib_version_group,
+            )
 
-    def _do_nothing(self, params: ExecuteParameters) -> ExecuteResult:
+    def _do_nothing(self, _: ExecuteParameters) -> ExecuteResult:
         return ExecuteResult(
-            params.operation_instance.operation_target_handle,
-            self._mdib.data_model.msg_types.InvocationState.FINISHED,
+            invocation_state=self._mdib.data_model.msg_types.InvocationState.FINISHED,
+            mdib_version_group=self._mdib.mdib_version_group,
         )

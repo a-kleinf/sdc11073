@@ -147,7 +147,10 @@ class MyRoleProvider1(RoleProvider):
         self.operation1_called += 1
         self.operation1_args = argument
         self._logger.info('_handle_operation_1 called arg=%r', argument)
-        return ExecuteResult(params.operation_instance.operation_target_handle, InvocationState.FINISHED)
+        return ExecuteResult(
+            invocation_state=InvocationState.FINISHED,
+            mdib_version_group=self._mdib.mdib_version_group,
+        )
 
     def _handle_operation_2(self, params: ExecuteParameters) -> ExecuteResult:
         """Manipulate the operation target, and increments the call counter."""
@@ -161,7 +164,10 @@ class MyRoleProvider1(RoleProvider):
         op_target_entity.state.MetricValue.Value = argument
         with self._mdib.metric_state_transaction() as mgr:
             mgr.write_entity(op_target_entity)
-        return ExecuteResult(params.operation_instance.operation_target_handle, InvocationState.FINISHED)
+        return ExecuteResult(
+            invocation_state=InvocationState.FINISHED,
+            mdib_version_group=self._mdib.mdib_version_group,
+        )
 
 
 class MyRoleProvider2(RoleProvider):
@@ -207,7 +213,10 @@ class MyRoleProvider2(RoleProvider):
         op_target_entity.state.MetricValue.Value = argument
         with self._mdib.metric_state_transaction() as mgr:
             mgr.write_entity(op_target_entity)
-        return ExecuteResult(params.operation_instance.operation_target_handle, InvocationState.FINISHED)
+        return ExecuteResult(
+            invocation_state=InvocationState.FINISHED,
+            mdib_version_group=self._mdib.mdib_version_group,
+        )
 
 
 class MyProductImpl(BaseProduct):

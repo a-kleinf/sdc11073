@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from sdc11073.provider.operations import ExecuteResult
-from sdc11073.xml_types.msg_types import InvocationState
 from tutorial.codedvaluecomparator import _coded_value_comparator
 from tutorial.productandroles.nomenclature import NomenclatureCodes
 from tutorial.productandroles.providerbase import RoleProvider
@@ -75,7 +74,7 @@ class GenericAudioPauseProvider(RoleProvider):
                 return cancel_ap_operation
         return None
 
-    def _set_global_audio_pause(self, params: ExecuteParameters) -> ExecuteResult:
+    def _set_global_audio_pause(self, _: ExecuteParameters) -> ExecuteResult:
         """Set global audio pause (ExecuteHandler).
 
         If global audio pause is initiated, all SystemSignalActivation/State for all alarm systems of the
@@ -93,7 +92,10 @@ class GenericAudioPauseProvider(RoleProvider):
         alert_system_entities = self._mdib.entities.by_node_type(pm_names.AlertSystemDescriptor)
         if len(alert_system_entities) == 0:
             self._logger.warning('_set_global_audio_pause called, but no AlertSystemDescriptor in mdib found')
-            return ExecuteResult(params.operation_instance.operation_target_handle, InvocationState.FAILED)
+            return ExecuteResult(
+                invocation_state=self._mdib.data_model.msg_types.InvocationState.FAILED,
+                mdib_version_group=self._mdib.mdib_version_group,
+            )
 
         with self._mdib.alert_state_transaction() as mgr:
             for as_entity in alert_system_entities:
@@ -141,12 +143,12 @@ class GenericAudioPauseProvider(RoleProvider):
                             mgr.write_entity(aud_signal)
                     mgr.write_entity(as_entity)
 
-        return ExecuteResult(
-            params.operation_instance.operation_target_handle,
-            self._mdib.data_model.msg_types.InvocationState.FINISHED,
-        )
+            return ExecuteResult(
+                invocation_state=self._mdib.data_model.msg_types.InvocationState.FINISHED,
+                mdib_version_group=self._mdib.mdib_version_group,
+            )
 
-    def _cancel_global_audio_pause(self, params: ExecuteParameters) -> ExecuteResult:
+    def _cancel_global_audio_pause(self, _: ExecuteParameters) -> ExecuteResult:
         """Cancel global audio pause (ExecuteHandler).
 
         If global audio pause is initiated, all SystemSignalActivation/State for all alarm systems of the product with
@@ -158,8 +160,10 @@ class GenericAudioPauseProvider(RoleProvider):
             alert_system_entities = self._mdib.entities.by_node_type(pm_names.AlertSystemDescriptor)
             if len(alert_system_entities) == 0:
                 self._logger.warning('_cancel_global_audio_pause called, but no AlertSystemDescriptor in mdib found')
-                return ExecuteResult(params.operation_instance.operation_target_handle, InvocationState.FAILED)
-
+                return ExecuteResult(
+                    invocation_state=self._mdib.data_model.msg_types.InvocationState.FAILED,
+                    mdib_version_group=self._mdib.mdib_version_group,
+                )
             for as_entity in alert_system_entities:
                 if as_entity.state.ActivationState != pm_types.AlertActivation.ON:
                     self._logger.info('_cancel_global_audio_pause: nothing to do for alert system %s', as_entity.handle)
@@ -194,10 +198,10 @@ class GenericAudioPauseProvider(RoleProvider):
                                 aud_signal.state.Presence = pm_types.AlertSignalPresence.ON
                                 mgr.write_entity(aud_signal)
                     mgr.write_entity(as_entity)
-        return ExecuteResult(
-            params.operation_instance.operation_target_handle,
-            self._mdib.data_model.msg_types.InvocationState.FINISHED,
-        )
+            return ExecuteResult(
+                invocation_state=self._mdib.data_model.msg_types.InvocationState.FINISHED,
+                mdib_version_group=self._mdib.mdib_version_group,
+            )
 
 
 class AudioPauseProvider(GenericAudioPauseProvider):

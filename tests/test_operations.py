@@ -156,13 +156,15 @@ class TestBuiltinOperations(unittest.TestCase):
         self.assertEqual(patient_context_state_container.CoreData.Height.MeasuredValue, Decimal('88.2'))
         self.assertTrue(
             _coded_value_comparator(
-                patient_context_state_container.CoreData.Height.MeasurementUnit, pm_types.CodedValue('abc', 'def'),
+                patient_context_state_container.CoreData.Height.MeasurementUnit,
+                pm_types.CodedValue('abc', 'def'),
             ),
         )
         self.assertEqual(patient_context_state_container.CoreData.Weight.MeasuredValue, Decimal('68.2'))
         self.assertTrue(
             _coded_value_comparator(
-                patient_context_state_container.CoreData.Weight.MeasurementUnit, pm_types.CodedValue('abcd'),
+                patient_context_state_container.CoreData.Weight.MeasurementUnit,
+                pm_types.CodedValue('abcd'),
             ),
         )
         self.assertTrue(
@@ -186,7 +188,7 @@ class TestBuiltinOperations(unittest.TestCase):
         result = future.result(timeout=SET_TIMEOUT)
         state = result.InvocationInfo.InvocationState
         self.assertEqual(state, msg_types.InvocationState.FINISHED)
-        self.assertEqual(result.OperationTarget, proposed_context.Handle)
+        self.assertEqual(result.OperationTarget, patient_descriptor_container.Handle)
         patient_context_state_container = consumer_mdib.context_states.handle.get_one(
             patient_context_state_container.Handle,
         )
