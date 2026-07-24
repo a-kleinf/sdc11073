@@ -1,4 +1,3 @@
-import logging
 import threading
 import traceback
 import time
@@ -14,7 +13,6 @@ from . import mdibbase
 from . import msgreader
 from .. import namespaces
 from .. import pmtypes
-from concurrent import futures
 from .. import loghelper
 from .. import xmlparsing
 
@@ -160,10 +158,9 @@ class ClientRtBuffer(object):
             return _AgeData(mean_data, std_deviation, min_value or 0, max_value or 0)
 
 
-MDIB_VERSION_TOO_OLD = '{}: received too old MdibVersion, current {}, received {}'
-MDIB_VERSION_UNEXPECTED = '{}: received unexpect MdibVersion, expected {}, received {}'
-MDIB_VERSION_NOT_ALLOWED = '{}: received same MdibVersion (only allowed after DescriptionModificationReports), ' \
-                           'expected {}, received {}'
+MDIB_VERSION_TOO_OLD = '{}: MDIB not yet synchronized. This MdibVersion will not be processed, current {}, received {}'
+MDIB_VERSION_UNEXPECTED = '{}: unexpect MdibVersion, expected {}, received {}'
+
 _BufferedNotification = namedtuple('_BufferedNotification', 'report handler')
 
 
@@ -172,7 +169,6 @@ class ClientMdibContainer(mdibbase.MdibContainer):
     Only update source is a BICEPSClient."""
 
     DETERMINATIONTIME_WARN_LIMIT = 1.0 # in seconds
-    MDIB_VERSION_CHECK_DISABLED = False # for testing purpose you can disable checking of mdib version, so that every notification is accepted.
     INITIAL_NOTIFICATION_BUFFERING = True # if False, the response for the first incoming notification is answered after the getmdib is done.
                                           # if True, first notifications are buffered and the responses are sent immediately.
     def __init__(self, sdcClient, maxRealtimeSamples=100):
@@ -194,8 +190,6 @@ class ClientMdibContainer(mdibbase.MdibContainer):
         self._bufferedNotificationsLock = Lock()
         self.waveform_time_warner = DeterminationTimeWarner()
         self.metric_time_warner = DeterminationTimeWarner()
-
-        self._last_descr_modification_mdib_version = None
 
     def initMdib(self):
         if  self._isInitialized:
@@ -349,38 +343,36 @@ class ClientMdibContainer(mdibbase.MdibContainer):
         properties.bind(self._sdcClient, episodicOperationalStateReport=self._onOperationalStateReport)
 
 
-    def _canAcceptMdibVersion(self, log_prefix, newMdibVersion, is_description_modification=False):
-        if self.MDIB_VERSION_CHECK_DISABLED:
-            return True
-        if newMdibVersion is None:
-            self._logger.error('{}: could not check MdibVersion!', log_prefix)
-        else:
-            # log deviations from expected mdib version
-            if is_description_modification and newMdibVersion > self.mdibVersion:
-                self._logger.debug('{}: MdibVersion received via DescriptionModification will be allowed for next '
-                                   'reports, current MdibVersion {}, received MdibVersion {}',
-                                   log_prefix, self.mdibVersion, newMdibVersion)
-                self._last_descr_modification_mdib_version = newMdibVersion
+    def _canAcceptMdibVersion(self, log_prefix, mdib_version, is_description_modification=False):
+        if mdib_version <= 0:
+            msg = f'{log_prefix}: MdibVersion is {mdib_version}, must be greater than 0!'
+            raise ValueError(msg)
 
-            if newMdibVersion < self.mdibVersion:
-                log_level = logging.ERROR if self._synchronizedReports.is_set() else logging.WARNING
-                self._logger.log(log_level, MDIB_VERSION_TOO_OLD, log_prefix, self.mdibVersion, newMdibVersion)
-            elif (newMdibVersion - self.mdibVersion) > 1:
-                if self._sdcClient.all_subscribed:
-                    self._logger.error(MDIB_VERSION_UNEXPECTED, log_prefix, self.mdibVersion + 1, newMdibVersion)
-            # only after DescriptionModificationReports it is allowed to receive other reports
-            # with the same mdib version
-            elif newMdibVersion == self.mdibVersion \
-                    and newMdibVersion != self._last_descr_modification_mdib_version \
-                    and self._synchronizedReports.is_set():
-                self._logger.error(MDIB_VERSION_NOT_ALLOWED, log_prefix, self.mdibVersion + 1, newMdibVersion)
+        if mdib_version < self.mdibVersion:
+            if self._synchronizedReports.is_set():
+                raise ValueError('SynchronizedReports is not set') # TODO
+            else:
+                self._logger.debug(MDIB_VERSION_TOO_OLD, log_prefix, self.mdibVersion, mdib_version)
+                return False
 
-            if newMdibVersion >= self.mdibVersion:
+        # TODO WRITE COMMENT HERE - SEE SDPI ?!?
+        elif mdib_version == self.mdibVersion:
+            if self._synchronizedReports.is_set():
+                raise ValueError("All subscribed!")  # TODO
+            else:
                 self._synchronizedReports.set()
-                if not is_description_modification and newMdibVersion > self.mdibVersion:
-                    self._last_descr_modification_mdib_version = None
-                return True
-        return False
+                return False
+
+        elif (mdib_version - self.mdibVersion) > 1:
+            self._logger.error(MDIB_VERSION_UNEXPECTED, log_prefix, self.mdibVersion + 1, mdib_version)
+            if self._sdcClient.all_subscribed:
+                raise ValueError('All subscribed!') # TODO
+
+        if mdib_version > self.mdibVersion:
+            self._synchronizedReports.set()
+            return True
+
+        raise RuntimeError('THIS SHOULD NEVER HAPPEN!')
 
 
     def _update_mdib_version_group(self, reportNode):
@@ -393,6 +385,13 @@ class ClientMdibContainer(mdibbase.MdibContainer):
         instance_id = reportNode.get('InstanceId')
         if instance_id != self.instanceId:
             self.instanceId = int(instance_id)
+
+
+    def _extract_mdib_version(self, report_node):
+        try:
+            return int(report_node.get('MdibVersion'))
+        except (TypeError, ValueError):
+            raise RuntimeError('MdibVersion must be an integer.')
 
 
     def _waitUntilInitialized(self, log_prefix):
@@ -410,13 +409,15 @@ class ClientMdibContainer(mdibbase.MdibContainer):
         if showsuccesslog:
             self._logger.info('{}: _waitUntilInitialized took {} seconds', log_prefix, delay)
 
+
     def _onEpisodicMetricReport(self, reportNode, is_buffered_report=False):
         # copy reportNode, further processing might change report data. Avoid side effects
         reportNode = xmlparsing.copy_node_wo_parent(reportNode)
         if not is_buffered_report and self._bufferNotification(reportNode, self._onEpisodicMetricReport):
             return
-        newMdibVersion = int(reportNode.get('MdibVersion', '0'))
-        if not self._canAcceptMdibVersion('_onEpisodicMetricReport', newMdibVersion):
+
+        mdib_version = self._extract_mdib_version(reportNode)
+        if not self._canAcceptMdibVersion('_onEpisodicMetricReport', mdib_version):
             return
 
         now = time.time()
@@ -467,15 +468,15 @@ class ClientMdibContainer(mdibbase.MdibContainer):
             if shall_log == A_OUT_OF_RANGE:
                 self._logger.warn(
                     '_onEpisodicMetricReport mdibVersion {}: age of metrics outside limit of {} sec.: max, min = {:03f}, {:03f}',
-                    newMdibVersion, self.DETERMINATIONTIME_WARN_LIMIT, maxAge, minAge)
+                    mdib_version, self.DETERMINATIONTIME_WARN_LIMIT, maxAge, minAge)
             elif shall_log == A_STILL_OUT_OF_RANGE:
                 self._logger.warn(
                     '_onEpisodicMetricReport mdibVersion {}: age of metrics still outside limit of {} sec.: max, min = {:03f}, {:03f}',
-                    newMdibVersion, self.DETERMINATIONTIME_WARN_LIMIT, maxAge, minAge)
+                    mdib_version, self.DETERMINATIONTIME_WARN_LIMIT, maxAge, minAge)
             elif shall_log == A_BACK_IN_RANGE:
                 self._logger.info(
                     '_onEpisodicMetricReport mdibVersion {}: age of metrics back in limit of {} sec.: max, min = {:03f}, {:03f}',
-                    newMdibVersion, self.DETERMINATIONTIME_WARN_LIMIT, maxAge, minAge)
+                    mdib_version, self.DETERMINATIONTIME_WARN_LIMIT, maxAge, minAge)
         finally:
             self._updateStateObservables(metricsByHandle.values())
 
@@ -484,8 +485,9 @@ class ClientMdibContainer(mdibbase.MdibContainer):
         reportNode = xmlparsing.copy_node_wo_parent(reportNode)
         if not is_buffered_report and self._bufferNotification(reportNode, self._onEpisodicAlertReport):
             return
-        newMdibVersion = int(reportNode.get('MdibVersion', '0'))
-        if not self._canAcceptMdibVersion('_onEpisodicAlertReport', newMdibVersion):
+        
+        mdib_version = self._extract_mdib_version(reportNode)
+        if not self._canAcceptMdibVersion('_onEpisodicAlertReport', mdib_version):
             return
 
         alertByHandle = {}
@@ -522,9 +524,11 @@ class ClientMdibContainer(mdibbase.MdibContainer):
         reportNode = xmlparsing.copy_node_wo_parent(reportNode)
         if not is_buffered_report and self._bufferNotification(reportNode, self._onOperationalStateReport):
             return
-        newMdibVersion = int(reportNode.get('MdibVersion', '0'))
-        if not self._canAcceptMdibVersion('_onOperationalStateReport', newMdibVersion):
+
+        mdib_version = self._extract_mdib_version(reportNode)
+        if not self._canAcceptMdibVersion('_onOperationalStateReport', mdib_version):
             return
+        
         operationByHandle = {}
         self._logger.info('_onOperationalStateReport: report={}', lambda:etree_.tostring(reportNode))
         allOperationStateContainers = self._msgReader.readOperationalStateReport(reportNode)
@@ -575,9 +579,11 @@ class ClientMdibContainer(mdibbase.MdibContainer):
         # reportNode contains a list of msg:State nodes
         if not is_buffered_report and self._bufferNotification(reportNode, self._onWaveformReport):
             return
-        newMdibVersion = int(reportNode.get('MdibVersion', '0'))
-        if not self._canAcceptMdibVersion('_onWaveformReport', newMdibVersion):
+
+        mdib_version = self._extract_mdib_version(reportNode)
+        if not self._canAcceptMdibVersion('_onWaveformReport', mdib_version):
             return
+        
         waveformByHandle = {}
         waveformAge = {} # collect age of all waveforms in this report, and make one report if age is above warn limit (instead of multiple)
         allRtSampleArrayContainers = self._msgReader.readWaveformReport(reportNode)
@@ -633,13 +639,13 @@ class ClientMdibContainer(mdibbase.MdibContainer):
                     tmp = ', '.join('"{}":{:.3f}sec.'.format(k, v) for k,v in waveformAge.items())
                     if shall_log == A_OUT_OF_RANGE:
                         self._logger.warn('_onWaveformReport mdibVersion {}: age of samples outside limit of {} sec.: age={}!',
-                                          newMdibVersion, self.DETERMINATIONTIME_WARN_LIMIT, tmp)
+                                          mdib_version, self.DETERMINATIONTIME_WARN_LIMIT, tmp)
                     elif shall_log == A_STILL_OUT_OF_RANGE:
                         self._logger.warn('_onWaveformReport mdibVersion {}: age of samples still outside limit of {} sec.: age={}!',
-                                          newMdibVersion, self.DETERMINATIONTIME_WARN_LIMIT, tmp)
+                                          mdib_version, self.DETERMINATIONTIME_WARN_LIMIT, tmp)
                     elif shall_log == A_BACK_IN_RANGE:
                         self._logger.info('_onWaveformReport mdibVersion {}: age of samples back in limit of {} sec.: age={}',
-                                          newMdibVersion, self.DETERMINATIONTIME_WARN_LIMIT, tmp)
+                                          mdib_version, self.DETERMINATIONTIME_WARN_LIMIT, tmp)
             if LOG_WF_AGE_INTERVAL:
                 now = time.time()
                 if now - self._last_wf_age_log >= LOG_WF_AGE_INTERVAL:
@@ -656,9 +662,11 @@ class ClientMdibContainer(mdibbase.MdibContainer):
         reportNode = xmlparsing.copy_node_wo_parent(reportNode)
         if not is_buffered_report and self._bufferNotification(reportNode, self._onEpisodicContextReport):
             return
-        newMdibVersion = int(reportNode.get('MdibVersion', '0'))
-        if not self._canAcceptMdibVersion('_onEpisodicContextReport', newMdibVersion):
+
+        mdib_version = self._extract_mdib_version(reportNode)
+        if not self._canAcceptMdibVersion('_onEpisodicContextReport', mdib_version):
             return
+        
         contextByHandle = {}
         stateContainers = self._msgReader.readEpisodicContextReport(reportNode)
         try:
@@ -697,9 +705,11 @@ class ClientMdibContainer(mdibbase.MdibContainer):
         reportNode = xmlparsing.copy_node_wo_parent(reportNode)
         if not is_buffered_report and self._bufferNotification(reportNode, self._onEpisodicComponentReport):
             return
-        newMdibVersion = int(reportNode.get('MdibVersion', '1'))
-        if not self._canAcceptMdibVersion('_onEpisodicComponentReport', newMdibVersion):
+
+        mdib_version = self._extract_mdib_version(reportNode)
+        if not self._canAcceptMdibVersion('_onEpisodicComponentReport', mdib_version):
             return
+        
         componentByHandle = {}
         statecontainers = self._msgReader.readEpisodicComponentReport(reportNode)
         try:
@@ -743,10 +753,9 @@ class ClientMdibContainer(mdibbase.MdibContainer):
         reportNode = xmlparsing.copy_node_wo_parent(reportNode)
         if not is_buffered_report and self._bufferNotification(reportNode, self._onDescriptionModificationReport):
             return
-        newMdibVersion = int(reportNode.get('MdibVersion', '0'))
-        if not self._canAcceptMdibVersion('_onDescriptionModificationReport',
-                                          newMdibVersion,
-                                          is_description_modification=True):
+
+        mdib_version = self._extract_mdib_version(reportNode)
+        if not self._canAcceptMdibVersion('_onDescriptionModificationReport', mdib_version):
             return
 
         descriptions_lookup_list = self._msgReader.readDescriptionModificationReport(reportNode)
@@ -785,7 +794,7 @@ class ClientMdibContainer(mdibbase.MdibContainer):
                                       dc.handle, dc.parentHandle)
                     container = self.descriptions.handle.getOne(dc.handle, allowNone=True)
                     if container is None:
-                        pass
+                        pass   # TODO EXCEPTION HERE
                     else:
                         container.updateDescrFromNode(dc.node)
                     updatedDescriptorByHandle[dc.handle] = dc
@@ -830,63 +839,22 @@ class ClientMdibContainer(mdibbase.MdibContainer):
         :return: True if new state is ok for mdib , otherwise False
         """
         diff = int(newStateContainer.StateVersion) - int(oldStateContainer.StateVersion)
-        # diff == 0 can happen if there is only a descriptor version update
-        if diff == 1:  # this is the perfect version
+        if diff == 1:
             return True
+        # BICEPS R0038: A SERVICE PROVIDER SHALL increment pm:AbstractState/@StateVersion by 1 if the
+        # content of a child ELEMENT or an ATTRIBUTE of the state has changed.
         elif diff > 1:
-            self._logger.error('{}: missed {} states for state DescriptorHandle={} ({}->{})',
-                               reportName,
-                               diff - 1, oldStateContainer.descriptorHandle,
-                               oldStateContainer.StateVersion, newStateContainer.StateVersion)
-            return True  # the new version is newer, therefore it can be added to mdib
-        elif diff < 0:
-            if not is_buffered_report:
-                self._logger.error(
-                    '{}: reduced state version for state DescriptorHandle={} ({}->{}) ',
-                    reportName, oldStateContainer.descriptorHandle,
-                    oldStateContainer.StateVersion, newStateContainer.StateVersion)
-            return False
-        else:  # diff == 0:
-            diffs = oldStateContainer.diff(newStateContainer)  # compares all xml attributes
-            if diffs:
-                self._logger.error(
-                    '{}: repeated state version {} for state {}, DescriptorHandle={}, but states have different data:{}',
-                    reportName, oldStateContainer.StateVersion, oldStateContainer.__class__.__name__,
-                    oldStateContainer.descriptorHandle, diffs)
-            return False
-
-
-    def waitMetricMatches(self, handle, matchesfunc, timeout):
-        """ wait until a matching metric has been received. The matching is defined by the handle of the metric and the result of a matching function.
-        If the matching function returns true, this function returns.
-        :param handle: The handle string of the metric of interest.
-        :param matchesfunc: a callable, argument is the current state with matching handle. Can be None, in that case every state matches
-        Example:
-            expected = 42
-            def isMatchingValue(state):
-                found = state.xpath('dom:MetricValue/@Value', namespaces=nsmap) # returns a list of values, empty if nothing matches
-                if found:
-                    found[0] = int(found[0])
-                    return [expected] == found
-        :param timeout: timeout in seconds
-        @return: the matching state. In cas of a timeout it raises a TimeoutError exception.
-        """ 
-        fut = futures.Future()
-        # define a callback function that sets value of fut
-        def onMetricsByHandle(metricsByHandle):
-            metric = metricsByHandle.get(handle)
-            if metric is not None:
-                if matchesfunc is None or matchesfunc(metric):
-                    fut.set_result(metric)
-        try:
-            properties.bind(self, metricsByHandle = onMetricsByHandle)
-            begin = time.monotonic()
-            ret = fut.result(timeout)
-            self._logger.debug('waitMetricMatches: got result after {:.2f} seconds', time.monotonic() - begin)
-            return ret
-        finally:
-            properties.unbind(self, metricsByHandle = onMetricsByHandle)
-
+            raise Exception(
+                f"{reportName}",
+            )  # TODO
+        # BICEPS: msg:AbstractReport SHALL contain only pm:AbstractState instances where at least one child
+        # ELEMENT or ATTRIBUTE have changed. See documentations of episodic reports.
+        else:
+            if is_buffered_report:
+                return False
+            raise Exception(
+                f"{reportName}",
+            )  # TODO
 
     def mkProposedState(self, descriptorHandle, copyCurrentState=True, handle=None):
         """ Create a new state that can be used as proposed state in according operations.

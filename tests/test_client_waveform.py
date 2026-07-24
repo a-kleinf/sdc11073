@@ -187,8 +187,7 @@ class TestClientWaveform(unittest.TestCase):
             clientmdib = sdc11073.mdib.ClientMdibContainer(cl)
             clientmdib._bindToObservables()
             clientmdib._isInitialized = True # fake it, because we do not call initMdib()
-            clientmdib.MDIB_VERSION_CHECK_DISABLED = True # we have no mdib version incrementing in this test, therefore disable check
-            
+
             # create dummy descriptors
             for handle in my_handles:
                 attributes = {'SamplePeriod': 'P0Y0M0DT0H0M0.0157S',  # use a unique sample period
