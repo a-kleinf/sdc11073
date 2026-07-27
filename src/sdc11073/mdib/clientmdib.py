@@ -343,11 +343,13 @@ class ClientMdibContainer(mdibbase.MdibContainer):
         properties.bind(self._sdcClient, episodicOperationalStateReport=self._onOperationalStateReport)
 
 
-    def _canAcceptMdibVersion(self, log_prefix, mdib_version, is_description_modification=False):
+    def _canAcceptMdibVersion(self, log_prefix, mdib_version):
         if mdib_version <= 0:
             msg = f'{log_prefix}: MdibVersion is {mdib_version}, must be greater than 0!'
             raise ValueError(msg)
 
+        # SDPi R1007 requires a strictly increasing msg:AbstractReport/@MdibVersion.
+        # This prohibits decrementing version numbers within an MDIB sequence.
         if mdib_version < self.mdibVersion:
             if self._synchronizedReports.is_set():
                 msg = (f'{log_prefix}: received MdibVersion {mdib_version} is older than the current '
@@ -357,7 +359,8 @@ class ClientMdibContainer(mdibbase.MdibContainer):
                 self._logger.debug(MDIB_VERSION_TOO_OLD, log_prefix, self.mdibVersion, mdib_version)
                 return False
 
-        # TODO WRITE COMMENT HERE - SEE SDPI ?!?
+        # SDPi R1007 requires a strictly increasing msg:AbstractReport/@MdibVersion.
+        # This prohibits two reports with the same MDIB version.
         elif mdib_version == self.mdibVersion:
             if self._synchronizedReports.is_set():
                 msg = (f'{log_prefix}: received MdibVersion {mdib_version} equals the current '
@@ -368,6 +371,8 @@ class ClientMdibContainer(mdibbase.MdibContainer):
                 return False
 
         elif (mdib_version - self.mdibVersion) > 1:
+            # An error is logged in this case because this MDIB implementation cannot determine whether essential
+            # information was missed or not received.
             self._logger.error(MDIB_VERSION_UNEXPECTED, log_prefix, self.mdibVersion + 1, mdib_version)
             if self._sdcClient.all_subscribed:
                 msg = (f'{log_prefix}: received MdibVersion {mdib_version} skips one or more versions '
