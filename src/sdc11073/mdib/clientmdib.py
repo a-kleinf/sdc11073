@@ -350,7 +350,9 @@ class ClientMdibContainer(mdibbase.MdibContainer):
 
         if mdib_version < self.mdibVersion:
             if self._synchronizedReports.is_set():
-                raise ValueError('SynchronizedReports is not set') # TODO
+                msg = (f'{log_prefix}: received MdibVersion {mdib_version} is older than the current '
+                       f'MdibVersion {self.mdibVersion}!')
+                raise ValueError(msg)
             else:
                 self._logger.debug(MDIB_VERSION_TOO_OLD, log_prefix, self.mdibVersion, mdib_version)
                 return False
@@ -358,7 +360,9 @@ class ClientMdibContainer(mdibbase.MdibContainer):
         # TODO WRITE COMMENT HERE - SEE SDPI ?!?
         elif mdib_version == self.mdibVersion:
             if self._synchronizedReports.is_set():
-                raise ValueError("All subscribed!")  # TODO
+                msg = (f'{log_prefix}: received MdibVersion {mdib_version} equals the current '
+                       f'MdibVersion!')
+                raise ValueError(msg)
             else:
                 self._synchronizedReports.set()
                 return False
@@ -366,7 +370,9 @@ class ClientMdibContainer(mdibbase.MdibContainer):
         elif (mdib_version - self.mdibVersion) > 1:
             self._logger.error(MDIB_VERSION_UNEXPECTED, log_prefix, self.mdibVersion + 1, mdib_version)
             if self._sdcClient.all_subscribed:
-                raise ValueError('All subscribed!') # TODO
+                msg = (f'{log_prefix}: received MdibVersion {mdib_version} skips one or more versions '
+                       f'(expected {self.mdibVersion + 1})!')
+                raise ValueError(msg)
 
         if mdib_version > self.mdibVersion:
             self._synchronizedReports.set()
