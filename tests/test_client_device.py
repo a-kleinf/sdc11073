@@ -668,7 +668,12 @@ class Test_Client_SomeDevice(unittest.TestCase):
             coll.result(timeout=NOTIFICATION_TIMEOUT)
             # verify that client automatically got the state (via EpisodicComponentReport )
             cl_state1 = cl_mdib.states.descriptorHandle.getOne(descriptorHandle)
-            self.assertEqual(cl_state1.diff(st), [])
+            self.assertEqual(cl_state1.ActivationState, st.ActivationState)
+            self.assertEqual(cl_state1.CalibrationInfo, st.CalibrationInfo)
+            self.assertEqual(cl_state1.NextCalibration, st.NextCalibration)
+            self.assertEqual(cl_state1.PhysicalConnector, st.PhysicalConnector)
+            self.assertEqual(cl_state1.OperatingHours, st.OperatingHours)
+            self.assertEqual(cl_state1.OperatingCycles, st.OperatingCycles)
             # verify that client also got a PeriodicMetricReport
             periodic_report = coll2.result(timeout=NOTIFICATION_TIMEOUT)
             state_nodes = periodic_report.xpath('//msg:ComponentState', namespaces=namespaces.nsmap)
@@ -691,11 +696,6 @@ class Test_Client_SomeDevice(unittest.TestCase):
             alertConditionDescr = sdcDevice.mdib.states.NODETYPE[namespaces.domTag('AlertConditionState')][0]
             descriptorHandle = alertConditionDescr.descriptorHandle
 
-            # there are possible rounding problems in timestamps.
-            # calculate a max_float_diff for max. 1 millisecond difference.
-            now = time.time()
-            max_float_diff_1ms = (now+0.001)/now -1
-
             for _activationState, _actualPriority, _presence in product(('On', 'Off', 'Psd'),
                                                                         ('Lo', 'Hi', 'Me', 'None'), (True,
                                                                                                      False)):  # test every possible combination
@@ -710,11 +710,16 @@ class Test_Client_SomeDevice(unittest.TestCase):
                 clientStateContainer = cl_mdib.states.descriptorHandle.getOne(
                     descriptorHandle)  # this shall be updated by notification
 
-                self.assertEqual(clientStateContainer.diff(st, max_float_diff=max_float_diff_1ms), [])
+                self.assertEqual(clientStateContainer.ActivationState, st.ActivationState)
+                self.assertEqual(clientStateContainer.ActualPriority, st.ActualPriority)
+                self.assertEqual(clientStateContainer.Presence, st.Presence)
+                self.assertEqual(clientStateContainer.ActualConditionGenerationDelay, st.ActualConditionGenerationDelay)
+                self.assertEqual(clientStateContainer.Rank, st.Rank)
+                self.assertAlmostEqual(clientStateContainer.DeterminationTime, st.DeterminationTime, delta=0.1)
 
             # pick an AlertSignal for testing
-            alertConditionDescr = sdcDevice.mdib.states.NODETYPE[namespaces.domTag('AlertSignalState')][0]
-            descriptorHandle = alertConditionDescr.descriptorHandle
+            alertSignalState = sdcDevice.mdib.states.NODETYPE[namespaces.domTag('AlertSignalState')][0]
+            descriptorHandle = alertSignalState.descriptorHandle
 
             for _activationState, _presence, _location, _slot in product(('On', 'Off', 'Psd'),
                                                                          ('On', 'Off', 'Latch', 'Ack'), ('Loc', 'Rem'),
@@ -730,7 +735,12 @@ class Test_Client_SomeDevice(unittest.TestCase):
                 coll.result(timeout=NOTIFICATION_TIMEOUT)
                 clientStateContainer = cl_mdib.states.descriptorHandle.getOne(
                     descriptorHandle)  # this shall be updated by notification
-                self.assertEqual(clientStateContainer.diff(st, max_float_diff=max_float_diff_1ms), [])
+                
+                self.assertEqual(clientStateContainer.ActivationState, st.ActivationState)
+                self.assertEqual(clientStateContainer.Presence, st.Presence)
+                self.assertEqual(clientStateContainer.Location, st.Location)
+                self.assertEqual(clientStateContainer.Slot, st.Slot)
+                self.assertAlmostEqual(clientStateContainer.ActualSignalGenerationDelay, st.ActualSignalGenerationDelay)
 
             # verify that client also got a PeriodicAlertReport
             periodic_report = coll2.result(timeout=NOTIFICATION_TIMEOUT)

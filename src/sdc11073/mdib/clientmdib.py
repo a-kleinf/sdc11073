@@ -345,6 +345,8 @@ class ClientMdibContainer(mdibbase.MdibContainer):
 
     def _canAcceptMdibVersion(self, log_prefix, mdib_version):
         if mdib_version <= 0:
+            # It is not assumed that MDIB version within a notification is zero.
+            # This is only possible in GetMdib response.
             msg = f'{log_prefix}: MdibVersion is {mdib_version}, must be greater than 0!'
             raise ValueError(msg)
 
