@@ -805,7 +805,8 @@ class ClientMdibContainer(mdibbase.MdibContainer):
                                       dc.handle, dc.parentHandle)
                     container = self.descriptions.handle.getOne(dc.handle, allowNone=True)
                     if container is None:
-                        pass   # TODO EXCEPTION HERE
+                        msg = f"An unexpected DescriptionModificationReport was received. No known descriptor exists for handle '{dc.handle}'."
+                        raise ValueError(msg)
                     else:
                         container.updateDescrFromNode(dc.node)
                     updatedDescriptorByHandle[dc.handle] = dc
@@ -846,26 +847,40 @@ class ClientMdibContainer(mdibbase.MdibContainer):
         compare state versions old vs new
         :param oldStateContainer:
         :param newStateContainer:
-        :param reportName: used for logging
+        :param reportName: used for logging and for the message of a raised ValueError
+        :param is_buffered_report: True if the report was buffered until the initial mdib was available
         :return: True if new state is ok for mdib , otherwise False
+        :raise ValueError: if @StateVersion of the received state is not the expected one
         """
-        diff = int(newStateContainer.StateVersion) - int(oldStateContainer.StateVersion)
+        old_version = int(oldStateContainer.StateVersion)
+        new_version = int(newStateContainer.StateVersion)
+        diff = new_version - old_version
+
+        # refer to BICEPS R0038: @StateVersion has to be incremented by one when the content of the pm:AbstractState
+        # ELEMENT changed or an ATTRIBUTE of the pm:AbstractState ELEMENT is changed
+        # refer to BICEPS documentation of episodic reports: msg:AbstractReport SHALL contain only pm:AbstractState
+        # instances where at least one child ELEMENT or ATTRIBUTE have changed.
+        # -> only @StateVersion incremented by one is allowed
+
         if diff == 1:
             return True
-        # BICEPS R0038: A SERVICE PROVIDER SHALL increment pm:AbstractState/@StateVersion by 1 if the
-        # content of a child ELEMENT or an ATTRIBUTE of the state has changed.
+
         elif diff > 1:
-            raise Exception(
-                f"{reportName}",
-            )  # TODO
-        # BICEPS: msg:AbstractReport SHALL contain only pm:AbstractState instances where at least one child
-        # ELEMENT or ATTRIBUTE have changed. See documentations of episodic reports.
+            # this mdib implementation cannot determine which information was missed
+            msg = (f'{reportName}: missed {diff - 1} state version(s) of state "{oldStateContainer.descriptorHandle}" '
+                   f'({oldStateContainer.__class__.__name__}): received @StateVersion {new_version}, '
+                   f'expected {old_version + 1}')
+            raise ValueError(msg)
+
         else:
             if is_buffered_report:
+                # the report was received before the initial GetMdib response, which already contains this state
+                # or a newer one => the state of the report can be ignored
                 return False
-            raise Exception(
-                f"{reportName}",
-            )  # TODO
+            msg = (f'{reportName}: received unexpected @StateVersion {new_version} for state '
+                   f'"{oldStateContainer.descriptorHandle}" ({oldStateContainer.__class__.__name__}), '
+                   f'current @StateVersion is {old_version}')
+            raise ValueError(msg)
 
     def mkProposedState(self, descriptorHandle, copyCurrentState=True, handle=None):
         """ Create a new state that can be used as proposed state in according operations.
