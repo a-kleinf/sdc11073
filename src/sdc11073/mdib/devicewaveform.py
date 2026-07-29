@@ -137,6 +137,7 @@ class DefaultWaveformSource(AbstractWaveformSource):
             # we must inform subscribers
             with mdib.mdibUpdateTransaction() as tr:
                 descr = tr.getDescriptor(descriptor_handle)
+                tr.getRealTimeSampleArrayMetricState(descriptor_handle)
                 descr.SamplePeriod = sample_period
         if descriptor_handle in self._waveform_generators:
             self._waveform_generators[descriptor_handle].setWfGenerator(wf_generator)

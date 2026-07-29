@@ -812,7 +812,7 @@ class ClientMdibContainer(mdibbase.MdibContainer):
                     else:
                         container.updateDescrFromNode(dc.node)
                     updatedDescriptorByHandle[dc.handle] = dc
-                    # if this is a context descriptor, delete all associated states that are not in
+                    # if this is a context descriptor, delete all related states that are not in
                     # state_containers list
                     if dc.isContextDescriptor:
                         updated_handles = set([s.Handle for s in stateContainers if s.descriptorHandle == dc.handle])
@@ -832,6 +832,8 @@ class ClientMdibContainer(mdibbase.MdibContainer):
                     if oldstateContainer is not None:
                         oldstateContainer.updateFromOtherContainer(sc)
                         multikey.updateObject(oldstateContainer)
+                    else:
+                        raise RuntimeError("TODO")  #  TODO
 
                 # write observables for every report part separately
                 if newDescriptorByHandle:
