@@ -781,21 +781,25 @@ class ClientMdibContainer(mdibbase.MdibContainer):
                 # -- new --
                 newDescriptorContainers, new_stateContainers = descriptions_lookup[pmtypes.DescriptionModificationTypes.CREATE]
                 for dc in newDescriptorContainers:
+                    if dc.isContextDescriptor:
+                        msg = f"Creation of AbstractContextDescriptor is not supported. Descriptor to remove '{dc.handle}'."
+                        raise RuntimeError(msg)
                     self.descriptions.addObject(dc)
                     self._logger.debug('_onDescriptionModificationReport: created description "{}" (parent="{}")',
                                       dc.handle, dc.parentHandle)
                     newDescriptorByHandle[dc.handle] = dc
                 for sc in new_stateContainers:
-                    # determine multikey
                     if sc.isContextState:
-                        multikey = self.contextStates
-                    else:
-                        multikey = self.states
-                    multikey.addObject(sc)
+                        msg = f"Creating a new AbstractContextState is not supported. State to update '{sc.descriptorHandle}'."
+                        raise RuntimeError(msg)
+                    self.states.addObject(sc)
 
                 # -- deleted --
                 deletedDescriptorContainers, stateContainers = descriptions_lookup[pmtypes.DescriptionModificationTypes.DELETE]
                 for dc in deletedDescriptorContainers:
+                    if dc.isContextDescriptor:
+                        msg = f"Deletion of AbstractContextDescriptor is not supported. Descriptor to remove '{dc.handle}'."
+                        raise RuntimeError(msg)
                     self._logger.debug('_onDescriptionModificationReport: remove descriptor "{}" (parent="{}")',
                                       dc.handle, dc.parentHandle)
                     self.rmDescriptorHandleAll(dc.handle) # handling of self.deletedDescriptorByHandle inside called method
@@ -803,6 +807,9 @@ class ClientMdibContainer(mdibbase.MdibContainer):
                 # -- updated --
                 updatedDescriptorContainers, stateContainers = descriptions_lookup[pmtypes.DescriptionModificationTypes.UPDATE]
                 for dc in updatedDescriptorContainers:
+                    if dc.isContextDescriptor:
+                        msg = f"Update of AbstractContextDescriptor is not supported. Descriptor to remove '{dc.handle}'."
+                        raise RuntimeError(msg)
                     self._logger.info('_onDescriptionModificationReport: update descriptor "{}" (parent="{}")',
                                       dc.handle, dc.parentHandle)
                     container = self.descriptions.handle.getOne(dc.handle, allowNone=True)
@@ -812,28 +819,16 @@ class ClientMdibContainer(mdibbase.MdibContainer):
                     else:
                         container.updateDescrFromNode(dc.node)
                     updatedDescriptorByHandle[dc.handle] = dc
-                    # if this is a context descriptor, delete all related states that are not in
-                    # state_containers list
-                    if dc.isContextDescriptor:
-                        updated_handles = set([s.Handle for s in stateContainers if s.descriptorHandle == dc.handle])
-                        my_handles = set([s.Handle for s in self.contextStates.descriptorHandle.get(dc.handle, [])])
-                        to_be_deleted = my_handles - updated_handles
-                        for handle in to_be_deleted:
-                            st = multikey.handle.getOne(handle)
-                            self.contextStates.removeObjectNoLock(st)
                 for sc in stateContainers:
-                    # determine multikey
                     if sc.isContextState:
-                        multikey = self.contextStates
-                        oldstateContainer = multikey.handle.getOne(sc.Handle, allowNone=True)
-                    else:
-                        multikey = self.states
-                        oldstateContainer = multikey.descriptorHandle.getOne(sc.descriptorHandle, allowNone=True)
-                    if oldstateContainer is not None:
-                        oldstateContainer.updateFromOtherContainer(sc)
-                        multikey.updateObject(oldstateContainer)
-                    else:
-                        raise RuntimeError("TODO")  #  TODO
+                        msg = f"Update of AbstractContextState is not supported. State to update '{sc.descriptorHandle}'."
+                        raise RuntimeError(msg)
+                    oldstateContainer = self.states.descriptorHandle.getOne(sc.descriptorHandle, allowNone=True)
+                    if oldstateContainer is None:
+                        msg = f"An unexpected DescriptionModificationReport was received. No known state exists for handle '{sc.descriptorHandle}'."
+                        raise RuntimeError(msg)
+                    oldstateContainer.updateFromOtherContainer(sc)
+                    self.states.updateObject(oldstateContainer)
 
                 # write observables for every report part separately
                 if newDescriptorByHandle:

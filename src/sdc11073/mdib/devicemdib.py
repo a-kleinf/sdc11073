@@ -512,7 +512,7 @@ class DeviceMdibContainer(mdibbase.MdibContainer):
                     else:
                         raise RuntimeError(f'do not know how to handle {descriptorContainer.__class__.__name__}')
                     if descriptorContainer.isContextDescriptor:
-                        raise RuntimeError(f'do not know how to handle {descriptorContainer.__class__.__name__}') # TODO
+                        raise RuntimeError('DescriptionModification for AbstractContextDescriptor is not supported.')
                     else:
                         # check if state is already present in this transaction
                         state_update = update_dict.get(descriptorContainer.handle)
@@ -534,8 +534,8 @@ class DeviceMdibContainer(mdibbase.MdibContainer):
                                 new_state.updateDescriptorVersion()
                                 update_dict[descriptorContainer.handle] = _TrItem(old_state, new_state)
                             else:
-                                raise Exception(f'do not know how to handle {descriptorContainer.__class__.__name__}')  # TODO
-
+                                msg = f'No state is provided during DescriptionModification for descriptor "{descriptorContainer.handle}".'
+                                raise Exception(msg)
                         descr_updated_states.append(new_state)
 
                 def _incrementParentDescriptorVersion(descriptorContainer):

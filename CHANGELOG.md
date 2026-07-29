@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - only allow one type of report (e.g. DescriptionModificationReport, EpisodicAlertReport ...) per `mdibUpdateTransaction` context
 - `setDeterminationTime` is not provided anymore by the `mdibUpdateTransaction`
 - remove `addMdsNode` from `DeviceMdibContainer`
+- raise exception when SDC Client Mdib receives ContextDescriptor modification via notification
 
 ## [1.3.3] - 2026-01-06
 
