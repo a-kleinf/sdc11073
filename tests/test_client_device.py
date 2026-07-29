@@ -753,15 +753,47 @@ class Test_Client_SomeDevice(unittest.TestCase):
             self.assertEqual(sdcDevice.mdib.sequenceId, cl_mdib.sequenceId)
 
     def test_mdibversion_consistency_checker(self):
-        """ verify that the client logs an error when received MdibVersion is not as expected"""
+        """ verify that the client rejects a report if the received MdibVersion is not as expected"""
         for sdcClient, sdcDevice in self._all_cl_dev:
+            # waveform notifications would increment the MdibVersion of the device continuously
+            sdcDevice.mdib._waveform_source._waveform_generators = {}
             clientMdib = ClientMdibContainer(sdcClient)
             clientMdib.initMdib()
 
             self.log_watcher.setPaused(True)
             clientMdib._logger.error = mock.MagicMock()
-            clientMdib._logger.log = mock.MagicMock()
 
+            # the client raises a ValueError if it cannot accept the MdibVersion of a report. Collect these errors
+            # here, otherwise the report would never be forwarded to the collectors used below.
+            rejected_reports = []
+            _canAcceptMdibVersion = clientMdib._canAcceptMdibVersion
+
+            def _canAcceptMdibVersionSpy(log_prefix, mdib_version):
+                try:
+                    return _canAcceptMdibVersion(log_prefix, mdib_version)
+                except ValueError as ex:
+                    rejected_reports.append(str(ex))
+                    return False
+
+            clientMdib._canAcceptMdibVersion = _canAcceptMdibVersionSpy
+
+            # a report with the expected MdibVersion is accepted; this also synchronizes the client with the device
+            with sdcDevice.mdib.mdibUpdateTransaction() as mgr:
+                coll = observableproperties.SingleValueCollector(sdcClient, 'episodicMetricReport')
+
+                st = mgr.getMetricState('0x34F00100')
+                if st.metricValue is None:
+                    st.mkMetricValue()
+                st.metricValue.Value = random.randint(0, 42000)
+
+            coll.result(timeout=NOTIFICATION_TIMEOUT)  # wait for the next episodicMetricReport
+            self.assertEqual(rejected_reports, [])
+            self.assertTrue(clientMdib._synchronizedReports.is_set())
+            self.assertEqual(clientMdib.mdibVersion, sdcDevice.mdib.mdibVersion)
+            synchronized_mdib_version = clientMdib.mdibVersion
+
+            # provoke a gap in the MdibVersion sequence: the client cannot determine whether it missed essential
+            # information => it logs an error and rejects the report
             with sdcDevice.mdib.mdibUpdateTransaction() as mgr:
                 coll = observableproperties.SingleValueCollector(sdcClient, 'episodicMetricReport')
 
@@ -770,26 +802,51 @@ class Test_Client_SomeDevice(unittest.TestCase):
                 st = mgr.getMetricState('0x34F00100')
                 if st.metricValue is None:
                     st.mkMetricValue()
-                st.metricValue.Value = random.randint(0, 42000)
+                st.metricValue.Value = random.randint(42001, 84000)
 
             coll.result(timeout=NOTIFICATION_TIMEOUT)  # wait for the next episodicMetricReport
             arg_list_unexpected_version = (clientmdib.MDIB_VERSION_UNEXPECTED, '_onEpisodicMetricReport',
                                            mdib_version + 1, mdib_version + 21)
             clientMdib._logger.error.assert_any_call(*arg_list_unexpected_version)
+            self.assertEqual(len(rejected_reports), 1)
+            self.assertIn(f'received MdibVersion {mdib_version + 21} skips one or more versions '
+                          f'(expected {mdib_version + 1})!',
+                          rejected_reports[-1])
+            # the report was not applied
+            self.assertEqual(clientMdib.mdibVersion, synchronized_mdib_version)
 
+            # provoke a decremented MdibVersion, this report is rejected as well
+            coll = observableproperties.SingleValueCollector(sdcClient, 'episodicMetricReport')
             with sdcDevice.mdib.mdibUpdateTransaction() as mgr:
-                coll = observableproperties.SingleValueCollector(sdcClient, 'episodicMetricReport')
-
-                mdib_version = sdcDevice.mdib.mdibVersion
-                sdcDevice.mdib.mdibVersion = mdib_version - 100
+                sdcDevice.mdib.mdibVersion = synchronized_mdib_version - 2
                 st = mgr.getMetricState('0x34F00100')
                 if st.metricValue is None:
                     st.mkMetricValue()
-                st.metricValue.Value = random.randint(42001, 84000)
+                st.metricValue.Value = random.randint(84001, 126000)
 
             coll.result(timeout=NOTIFICATION_TIMEOUT)  # wait for the next episodicMetricReport
-            clientMdib._logger.log.assert_any_call(logging.ERROR, clientmdib.MDIB_VERSION_TOO_OLD,
-                                                   '_onEpisodicMetricReport', mdib_version, mdib_version - 99)
+            self.assertEqual(len(rejected_reports), 2)
+            self.assertIn(f'received MdibVersion {synchronized_mdib_version - 1} is older than the current MdibVersion '
+                          f'{synchronized_mdib_version}',
+                          rejected_reports[-1])
+            # the report was not applied
+            self.assertEqual(clientMdib.mdibVersion, synchronized_mdib_version)
+
+            # provoke a negative MdibVersion, this report is rejected as well
+            coll = observableproperties.SingleValueCollector(sdcClient, 'episodicMetricReport')
+            with sdcDevice.mdib.mdibUpdateTransaction() as mgr:
+                sdcDevice.mdib.mdibVersion = -20
+                st = mgr.getMetricState('0x34F00100')
+                if st.metricValue is None:
+                    st.mkMetricValue()
+                st.metricValue.Value = random.randint(84001, 126000)
+
+            coll.result(timeout=NOTIFICATION_TIMEOUT)  # wait for the next episodicMetricReport
+            self.assertEqual(len(rejected_reports), 3)
+            self.assertIn(f'MdibVersion is -19, must be greater than 0!',
+                          rejected_reports[-1])
+            # the report was not applied
+            self.assertEqual(clientMdib.mdibVersion, synchronized_mdib_version)
 
     def test_setPatientContextOperation(self):
         """client calls corresponding operation. 
