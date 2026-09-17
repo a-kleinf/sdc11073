@@ -1945,7 +1945,6 @@ class TestClientSomeDevice(unittest.TestCase):
             self.log_watcher.setPaused(True)
             with self.assertRaises(ValueError) as exc:
                 cl_mdib.process_incoming_metric_states_report(valid_version_group, report)
-            self.log_watcher.setPaused(False)
 
             new_status = status_coll.result(timeout=NOTIFICATION_TIMEOUT)
             self.assertEqual(new_status, ConsumerMdibState.invalid)
