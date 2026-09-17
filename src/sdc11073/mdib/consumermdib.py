@@ -8,7 +8,7 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Concatenate, ParamSpec, TypeVar
 
 from sdc11073 import loghelper
 from sdc11073 import observableproperties as properties
@@ -154,10 +154,16 @@ class ConsumerMdibState(enum.Enum):
 
 
 _MDIB_VERSION_NO_SYNC = '{}: MDIB not yet synchronized. This MdibVersion will not be processed, current {}, received {}'
-_MDIB_VERSION_UNEXPECTED = '{}: unexpect MdibVersion, expected {}, received {}'
+_MDIB_VERSION_UNEXPECTED = '{}: unexpected MdibVersion, expected {}, received {}'
 
 
-def _inconsistent_on_error(func: Callable[..., Any]) -> Callable[..., Any]:
+P = ParamSpec('P')
+T = TypeVar('T')
+
+
+def _inconsistent_on_error(
+    func: Callable[Concatenate[ConsumerMdib, P], T],
+) -> Callable[Concatenate[ConsumerMdib, P], T]:
     """Decorate a ConsumerMdib method that processes a received report.
 
     If the decorated method raises, the data of the mdib is no longer a correct mirror of the provider mdib:
@@ -165,11 +171,11 @@ def _inconsistent_on_error(func: Callable[..., Any]) -> Callable[..., Any]:
     """
 
     @functools.wraps(func)
-    def wrapper(self: ConsumerMdib, *args: Any, **kwargs: Any) -> Any:
+    def wrapper(mdib: ConsumerMdib, /, *args: P.args, **kwargs: P.kwargs) -> T:
         try:
-            return func(self, *args, **kwargs)
+            return func(mdib, *args, **kwargs)
         except Exception:
-            self.status = ConsumerMdibState.invalid
+            mdib.status = ConsumerMdibState.invalid
             raise
 
     return wrapper
@@ -178,8 +184,10 @@ def _inconsistent_on_error(func: Callable[..., Any]) -> Callable[..., Any]:
 class ConsumerMdib(mdibbase.MdibBase):
     """ConsumerMdib is a mirror of a provider mdib. Updates are performed by an SdcConsumer."""
 
-    # for testing purpose you can disable checking of mdib version, so that every notification is accepted.
+    # for testing purpose mdib version checks can be omitted
     MDIB_VERSION_CHECK_DISABLED = False
+    # for testing purpose state version checks can be omitted
+    STATE_VERSION_CHECK_DISABLED = False
 
     # sequence_or_instance_id_changed_event is set to True every time the sequence id changes.
     # It is not reset to False any time later.
@@ -206,7 +214,7 @@ class ConsumerMdib(mdibbase.MdibBase):
             sdc_client.sdc_definitions,
             loghelper.get_logger_adapter('sdc.client.mdib', sdc_client.log_prefix),
         )
-        self._synchronizedReports = threading.Event()
+        self._synchronized_reports = threading.Event()
         self._sdc_client = sdc_client
         if extras_cls is None:
             extras_cls = ConsumerMdibMethods
@@ -253,7 +261,7 @@ class ConsumerMdib(mdibbase.MdibBase):
         """Delete all data and reloads everything."""
         self._logger.info('reload_all called')
         with self.mdib_lock:
-            self._synchronizedReports.clear()
+            self._synchronized_reports.clear()
             self.status = ConsumerMdibState.initializing  # notifications are now buffered
             self.descriptions.clear()
             self.clear_states()
@@ -288,22 +296,24 @@ class ConsumerMdib(mdibbase.MdibBase):
             # process buffered notifications
             with self._buffered_notifications_lock:
                 self._logger.debug('got _buffered_notifications_lock')
-                for buffered_report in self._buffered_notifications:
-                    # buffered data might contain notifications that do not fit.
-                    if buffered_report.mdib_version_group.sequence_id != self.sequence_id:
-                        self.logger.debug(
-                            'wrong sequence id "%s"; ignore buffered report',
-                            buffered_report.mdib_version_group.sequence_id,
-                        )
-                        continue
-                    if buffered_report.mdib_version_group.mdib_version <= self.mdib_version:
-                        self.logger.debug(
-                            'older mdib version "%d"; ignore buffered report',
-                            buffered_report.mdib_version_group.mdib_version,
-                        )
-                        continue
-                    buffered_report.handler(buffered_report.mdib_version_group, buffered_report.data)
-                del self._buffered_notifications[:]
+                try:
+                    for buffered_report in self._buffered_notifications:
+                        # buffered data might contain notifications that do not fit.
+                        if buffered_report.mdib_version_group.sequence_id != self.sequence_id:
+                            self.logger.debug(
+                                'wrong sequence id "%s"; ignore buffered report',
+                                buffered_report.mdib_version_group.sequence_id,
+                            )
+                            continue
+                        if buffered_report.mdib_version_group.mdib_version <= self.mdib_version:
+                            self.logger.debug(
+                                'older mdib version "%d"; ignore buffered report',
+                                buffered_report.mdib_version_group.mdib_version,
+                            )
+                            continue
+                        buffered_report.handler(buffered_report.mdib_version_group, buffered_report.data)
+                finally:
+                    self._buffered_notifications.clear()
                 # self.status could have been set to invalid by a notification handler.
                 # In this case, we do not set it initialized.
                 if self.status == ConsumerMdibState.initializing:
@@ -345,7 +355,7 @@ class ConsumerMdib(mdibbase.MdibBase):
         # SDPi R1007 requires a strictly increasing msg:AbstractReport/@MdibVersion.
         # This prohibits decrementing version numbers within an MDIB sequence.
         if new_mdib_version < self.mdib_version:
-            if self._synchronizedReports.is_set():
+            if self._synchronized_reports.is_set():
                 msg = _MDIB_VERSION_UNEXPECTED.format(log_prefix, self.mdib_version + 1, new_mdib_version)
                 self._logger.error(msg)
                 raise ValueError(msg)
@@ -356,7 +366,7 @@ class ConsumerMdib(mdibbase.MdibBase):
         # SDPi R1007 requires a strictly increasing msg:AbstractReport/@MdibVersion.
         # This prohibits two reports with the same MDIB version.
         if new_mdib_version == self.mdib_version:
-            if self._synchronizedReports.is_set():
+            if self._synchronized_reports.is_set():
                 msg = _MDIB_VERSION_UNEXPECTED.format(log_prefix, self.mdib_version + 1, new_mdib_version)
                 self._logger.error(msg)
                 raise ValueError(msg)
@@ -365,7 +375,7 @@ class ConsumerMdib(mdibbase.MdibBase):
                 log_prefix,
                 new_mdib_version,
             )
-            self._synchronizedReports.set()
+            self._synchronized_reports.set()
             return False
 
         if (new_mdib_version - self.mdib_version) > 1:
@@ -377,14 +387,14 @@ class ConsumerMdib(mdibbase.MdibBase):
                 raise ValueError(msg)
 
         if new_mdib_version > self.mdib_version:
-            if not self._synchronizedReports.is_set():
+            if not self._synchronized_reports.is_set():
                 self._logger.debug(  # noqa: PLE1205
                     '{}: received report with mdib version {} greater than current mdib version {}. MDIB now in sync.',
                     log_prefix,
                     new_mdib_version,
                     self.mdib_version,
                 )
-                self._synchronizedReports.set()
+                self._synchronized_reports.set()
             return True
 
         raise RuntimeError('THIS SHOULD NEVER HAPPEN!')
@@ -442,10 +452,10 @@ class ConsumerMdib(mdibbase.MdibBase):
                 src = self.states
                 old_state_container = src.descriptor_handle.get_one(state_container.DescriptorHandle, allow_none=True)
                 if old_state_container is not None:
-                    if self._has_new_state_usable_state_version(old_state_container, state_container, report_type):
-                        old_state_container.update_from_other_container(state_container)
-                        src.update_object(old_state_container)
-                        states_by_handle[old_state_container.DescriptorHandle] = old_state_container
+                    self._raise_on_invalid_state_version(old_state_container, state_container, report_type)
+                    old_state_container.update_from_other_container(state_container)
+                    src.update_object(old_state_container)
+                    states_by_handle[old_state_container.DescriptorHandle] = old_state_container
                 else:
                     msg = f'Unknown state with DescriptorHandle "{state_container.DescriptorHandle}" received.'
                     self._logger.error(msg)
@@ -467,17 +477,17 @@ class ConsumerMdib(mdibbase.MdibBase):
                 src = self.context_states
                 old_state_container = src.handle.get_one(state_container.Handle, allow_none=True)
                 if old_state_container is not None:
-                    if self._has_new_state_usable_state_version(old_state_container, state_container, 'context states'):
-                        self._logger.info(  # noqa: PLE1205
-                            'updated context state: handle = {} Descriptor Handle={} Assoc={}, Validators={}',
-                            state_container.Handle,
-                            state_container.DescriptorHandle,
-                            state_container.ContextAssociation,
-                            state_container.Validator,
-                        )
-                        old_state_container.update_from_other_container(state_container)
-                        src.update_object(old_state_container)
-                        states_by_handle[old_state_container.Handle] = old_state_container
+                    self._raise_on_invalid_state_version(old_state_container, state_container, 'context states')
+                    self._logger.info(  # noqa: PLE1205
+                        'updated context state: handle = {} Descriptor Handle={} Assoc={}, Validators={}',
+                        state_container.Handle,
+                        state_container.DescriptorHandle,
+                        state_container.ContextAssociation,
+                        state_container.Validator,
+                    )
+                    old_state_container.update_from_other_container(state_container)
+                    src.update_object(old_state_container)
+                    states_by_handle[old_state_container.Handle] = old_state_container
                 else:
                     self._logger.info(  # noqa: PLE1205
                         'new context state: handle = {} Descriptor Handle={} Assoc={}, Validators={}',
@@ -700,14 +710,10 @@ class ConsumerMdib(mdibbase.MdibBase):
                     allow_none=True,
                 )
                 if old_state_container is not None:
-                    if self._has_new_state_usable_state_version(
-                        old_state_container,
-                        state_container,
-                        'waveform states',
-                    ):
-                        old_state_container.update_from_other_container(state_container)
-                        self.states.update_object(old_state_container)
-                        states_by_handle[old_state_container.DescriptorHandle] = old_state_container
+                    self._raise_on_invalid_state_version(old_state_container, state_container, 'waveform states')
+                    old_state_container.update_from_other_container(state_container)
+                    self.states.update_object(old_state_container)
+                    states_by_handle[old_state_container.DescriptorHandle] = old_state_container
                 else:
                     msg = f'Unknown state with DescriptorHandle "{state_container.DescriptorHandle}" received.'
                     self._logger.error(msg)
@@ -879,22 +885,24 @@ class ConsumerMdib(mdibbase.MdibBase):
         if deleted_descriptor_by_handle:
             self.deleted_descriptors_by_handle = deleted_descriptor_by_handle
 
-    def _has_new_state_usable_state_version(
+    def _raise_on_invalid_state_version(
         self,
         old_state_container: AbstractStateContainer,
         new_state_container: AbstractStateContainer,
         report_name: str,
-    ) -> bool:
+    ) -> None:
         """Compare state versions old vs new.
 
         :param old_state_container: old version of a state container in mdib
         :param new_state_container: new version of a state container in mdib
         :param report_name: used for logging
-        :return: True if new state is ok for mdib, otherwise False.
         """
+        if self.STATE_VERSION_CHECK_DISABLED:
+            return
+
         diff = int(new_state_container.StateVersion) - int(old_state_container.StateVersion)
         if diff == 1:  # this is the perfect version
-            return True
+            return
         if diff > 1:
             msg = (
                 f'{report_name}: missed {diff - 1} states for state '

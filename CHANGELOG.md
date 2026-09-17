@@ -9,12 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- the state of a `ConsumerMdib` is now available as the observable property `ConsumerMdib.status` (formerly the private `_state`, exposed read only via `ConsumerMdib.state`). It is set to `ConsumerMdibState.invalid` whenever an error occurs while processing a received report, so an application can observe it to be notified about an mdib that is no longer a correct mirror of the provider mdib
 - during `start_all` in `SdcConsumer`, if any subscription fails an exception is raised
 
 ### Added
 
 - the `http.client.NotConnected` raised by `SoapClient` now carries the reason of the underlying connection/SSL error, and the consumer now logs the SSL error when it falls back from an encrypted to an unencrypted connection [#427](https://github.com/Draegerwerk/sdc11073/issues/427)
+- the state of a `ConsumerMdib` is now available as the observable property `ConsumerMdib.status`. It is set to `ConsumerMdibState.invalid` whenever an exception occurs while processing a received report, so an application can observe it to be notified about a mdib that is no longer a correct mirror of the provider's mdib
 
 ### Fixed
 

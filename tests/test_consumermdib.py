@@ -24,19 +24,19 @@ class TestHasNewStateUsableStateVersion(unittest.TestCase):
         state.DescriptorHandle = 'my_handle'
         return state
 
-    def _has_new_state_usable_state_version(self, old_version: int, new_version: int) -> bool:
-        return self.mdib._has_new_state_usable_state_version(
+    def _raise_on_invalid_state_version(self, old_version: int, new_version: int) -> None:
+        self.mdib._raise_on_invalid_state_version(
             self._mk_state(old_version),
             self._mk_state(new_version),
             self.REPORT_NAME,
         )
 
     def test_incremented_state_version_returns_true(self):
-        self.assertTrue(self._has_new_state_usable_state_version(41, 42))
+        self._raise_on_invalid_state_version(41, 42)
 
     def test_missed_state_versions_raises(self):
         with self.assertRaises(ValueError) as ctx:
-            self._has_new_state_usable_state_version(41, 44)
+            self._raise_on_invalid_state_version(41, 44)
         msg = str(ctx.exception)
         self.assertIn(self.REPORT_NAME, msg)
         self.assertIn('missed 2 states', msg)
@@ -45,7 +45,7 @@ class TestHasNewStateUsableStateVersion(unittest.TestCase):
 
     def test_decremented_state_version_raises(self):
         with self.assertRaises(ValueError) as ctx:
-            self._has_new_state_usable_state_version(42, 41)
+            self._raise_on_invalid_state_version(42, 41)
         msg = str(ctx.exception)
         self.assertIn(self.REPORT_NAME, msg)
         self.assertIn('received older state', msg)
@@ -54,7 +54,7 @@ class TestHasNewStateUsableStateVersion(unittest.TestCase):
 
     def test_repeated_state_version_raises(self):
         with self.assertRaises(ValueError) as ctx:
-            self._has_new_state_usable_state_version(42, 42)
+            self._raise_on_invalid_state_version(42, 42)
         msg = str(ctx.exception)
         self.assertIn(self.REPORT_NAME, msg)
         self.assertIn('received older state', msg)
@@ -92,16 +92,16 @@ class TestCanAcceptMdibVersion(unittest.TestCase):
                     self.LOG_PREFIX, self.CURRENT_VERSION + 1, version
                 )
                 self.assertEqual(exp_msg, str(ctx.exception))
-                self.assertFalse(self.mdib._synchronizedReports.is_set())
+                self.assertFalse(self.mdib._synchronized_reports.is_set())
 
     def test_older_version_not_synchronized_returns_false(self):
         result = self._can_accept(self.CURRENT_VERSION - 1)
-        self.assertFalse(self.mdib._synchronizedReports.is_set())
+        self.assertFalse(self.mdib._synchronized_reports.is_set())
         self.assertFalse(result)
-        self.assertFalse(self.mdib._synchronizedReports.is_set())
+        self.assertFalse(self.mdib._synchronized_reports.is_set())
 
     def test_older_version_synchronized_raises(self):
-        self.mdib._synchronizedReports.set()
+        self.mdib._synchronized_reports.set()
         with self.assertRaises(ValueError) as ctx:
             self._can_accept(self.CURRENT_VERSION - 1)
         exp_msg = consumermdib._MDIB_VERSION_UNEXPECTED.format(
@@ -110,13 +110,13 @@ class TestCanAcceptMdibVersion(unittest.TestCase):
         self.assertEqual(exp_msg, str(ctx.exception))
 
     def test_same_version_not_synchronized_sets_synchronized_and_returns_false(self):
-        self.assertFalse(self.mdib._synchronizedReports.is_set())
+        self.assertFalse(self.mdib._synchronized_reports.is_set())
         result = self._can_accept(self.CURRENT_VERSION)
         self.assertFalse(result)
-        self.assertTrue(self.mdib._synchronizedReports.is_set())
+        self.assertTrue(self.mdib._synchronized_reports.is_set())
 
     def test_same_version_already_synchronized_raises(self):
-        self.mdib._synchronizedReports.set()
+        self.mdib._synchronized_reports.set()
         with self.assertRaises(ValueError) as ctx:
             self._can_accept(self.CURRENT_VERSION)
         exp_msg = consumermdib._MDIB_VERSION_UNEXPECTED.format(
@@ -125,16 +125,16 @@ class TestCanAcceptMdibVersion(unittest.TestCase):
         self.assertEqual(exp_msg, str(ctx.exception))
 
     def test_next_version_returns_true_and_sets_synchronized(self):
-        self.assertFalse(self.mdib._synchronizedReports.is_set())
+        self.assertFalse(self.mdib._synchronized_reports.is_set())
         result = self._can_accept(self.CURRENT_VERSION + 1)
         self.assertTrue(result)
-        self.assertTrue(self.mdib._synchronizedReports.is_set())
+        self.assertTrue(self.mdib._synchronized_reports.is_set())
 
     def test_next_version_already_synchronized_returns_true(self):
-        self.mdib._synchronizedReports.set()
+        self.mdib._synchronized_reports.set()
         result = self._can_accept(self.CURRENT_VERSION + 1)
         self.assertTrue(result)
-        self.assertTrue(self.mdib._synchronizedReports.is_set())
+        self.assertTrue(self.mdib._synchronized_reports.is_set())
 
     def test_version_gap_all_subscribed_raises(self):
         self.mdib._sdc_client.all_subscribed = True
@@ -147,10 +147,10 @@ class TestCanAcceptMdibVersion(unittest.TestCase):
 
     def test_version_gap_not_all_subscribed_returns_true_and_sets_synchronized(self):
         self.mdib._sdc_client.all_subscribed = False
-        self.assertFalse(self.mdib._synchronizedReports.is_set())
+        self.assertFalse(self.mdib._synchronized_reports.is_set())
         result = self._can_accept(self.CURRENT_VERSION + 5)
         self.assertTrue(result)
-        self.assertTrue(self.mdib._synchronizedReports.is_set())
+        self.assertTrue(self.mdib._synchronized_reports.is_set())
 
 
 class TestRetrieveContextStates(unittest.TestCase):
