@@ -535,7 +535,7 @@ class SdcConsumer:
         """Return the subscription manager."""
         return self._subscription_mgr
 
-    def _subscribe_to_hosted_service(self, dpws_hosted: Any) -> None:
+    def _subscribe_to_hosted_service(self, dpws_hosted: HostedServiceType) -> bool:
         """Set up subscriptions for a single hosted service."""
         available_actions: list[DispatchKey] = []
         if dpws_hosted.Types is not None:
@@ -544,14 +544,15 @@ class SdcConsumer:
                 if client is not None:
                     available_actions.extend(client.get_available_subscriptions())
         if not available_actions:
-            return
+            return True
 
         subscribe_actions = set()
+        strict_mdib_version_count = True
         for action in available_actions:
             if action.action in self._not_subscribed_actions_param:
                 self._logger.info('not subscribing to %s', action.action)
                 if action.action not in actions.REPORTS_NOT_AFFECTING_MDIB_VERSION:
-                    self.all_subscribed = False
+                    strict_mdib_version_count = False
             else:
                 subscribe_actions.add(action)
         if subscribe_actions:
@@ -559,6 +560,7 @@ class SdcConsumer:
             filter_type.text = ' '.join(x.action for x in subscribe_actions)
             filter_type.Dialect = DeviceEventingFilterDialectURI.ACTION
             self.do_subscribe(dpws_hosted, filter_type, subscribe_actions)
+        return strict_mdib_version_count
 
     def start_all(
         self,
@@ -636,11 +638,12 @@ class SdcConsumer:
 
         # start all subscriptions - group subscriptions per hosted service
         try:
-            self.all_subscribed = True
-            for dpws_hosted in self.host_description.relationship.Hosted:
+            all_subscribed_results = [
                 self._subscribe_to_hosted_service(dpws_hosted)
+                for dpws_hosted in self.host_description.relationship.Hosted
+            ]
+            self.all_subscribed = all(all_subscribed_results) and any(all_subscribed_results)
         except Exception:
-            self.all_subscribed = False
             with contextlib.suppress(Exception):
                 self.stop_all()
             raise
