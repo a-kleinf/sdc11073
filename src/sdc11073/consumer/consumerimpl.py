@@ -640,6 +640,7 @@ class SdcConsumer:
             for dpws_hosted in self.host_description.relationship.Hosted:
                 self._subscribe_to_hosted_service(dpws_hosted)
         except Exception:
+            self.all_subscribed = False
             with contextlib.suppress(Exception):
                 self.stop_all()
             raise
