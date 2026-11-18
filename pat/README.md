@@ -1,5 +1,5 @@
 # Plug-a-thon
-
+Some adaptions.
 This directory contains the tests according to the [v2.4.0](https://github.com/ornet-ev/plug-a-thon-testing/releases/tag/2.4.0) of the [test specification](https://github.com/ornet-ev/plug-a-thon-testing) from the [plug-a-thon](https://confluence.hl7.org/spaces/GP/pages/90354468/PAT+-+IHE+Plugathon+Events).
 
 ## Run
